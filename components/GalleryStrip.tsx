@@ -419,11 +419,23 @@ export function GalleryStrip() {
   const prefersReducedMotion = useReducedMotion();
   const railRef = useRef<HTMLDivElement | null>(null);
   const railInView = useInView(railRef, { amount: 0.2 });
+  const [isMobile, setIsMobile] = useState(false);
 
   const restartAuto = () => {
     if (restartTimer.current) clearTimeout(restartTimer.current);
     restartTimer.current = setTimeout(() => setAutoPlay(true), 3000);
   };
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) setAutoPlay(false);
+  }, [isMobile]);
 
   useEffect(() => {
     if (!autoPlay || prefersReducedMotion || !railInView) {
@@ -452,24 +464,28 @@ export function GalleryStrip() {
       <div className="mx-auto max-w-6xl">
         <div
           className="relative overflow-hidden rounded-[34px] border border-white/5 bg-black/60 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.45)]"
-          style={{
-            WebkitMaskImage: "linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%)",
-            maskImage: "linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%)",
-          }}
+          style={
+            !isMobile
+              ? {
+                  WebkitMaskImage: "linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%)",
+                  maskImage: "linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%)",
+                }
+              : undefined
+          }
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_25%,rgba(212,255,0,0.08),transparent_40%),radial-gradient(circle_at_80%_55%,rgba(90,155,255,0.08),transparent_45%)] opacity-50" />
           <motion.div
             ref={railRef}
             className="no-scrollbar flex gap-4 overflow-x-auto pb-3 snap-x snap-mandatory select-none"
-            animate={!prefersReducedMotion && autoPlay ? marqueeControls : undefined}
-            style={{ width: "200%", minWidth: "200%", cursor: "grab", userSelect: "none", willChange: autoPlay ? "transform" : "auto" }}
-            drag="x"
-            dragConstraints={{ left: -1600, right: 0 }}
-            dragElastic={0.12}
-            onHoverStart={() => setAutoPlay(false)}
-            onHoverEnd={() => restartAuto()}
-            onPointerDown={() => setAutoPlay(false)}
-            onPointerUp={() => restartAuto()}
+            animate={!prefersReducedMotion && autoPlay && !isMobile ? marqueeControls : undefined}
+            style={{ cursor: "grab", userSelect: "none", touchAction: "pan-x", willChange: autoPlay ? "transform" : "auto" }}
+            drag={isMobile ? false : "x"}
+            dragConstraints={isMobile ? undefined : { left: -1600, right: 0 }}
+            dragElastic={isMobile ? false : 0.12}
+            onHoverStart={() => !isMobile && setAutoPlay(false)}
+            onHoverEnd={() => !isMobile && restartAuto()}
+            onPointerDown={() => !isMobile && setAutoPlay(false)}
+            onPointerUp={() => !isMobile && restartAuto()}
           >
             {loopShots.map((shot, idx) => (
               <motion.div
