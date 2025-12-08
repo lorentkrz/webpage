@@ -71,6 +71,12 @@ function StatusChip({ label, color = "#a855f7" }: { label: string; color?: strin
   );
 }
 
+type SparkButtonProps = Omit<React.ComponentProps<typeof motion.button>, 'onClick' | 'ref'> & {
+  children: React.ReactNode;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  reduceMotion: boolean;
+};
+
 function SparkButton({
   children,
   onClick,
@@ -78,14 +84,14 @@ function SparkButton({
   disabled,
   reduceMotion,
   ...rest
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { reduceMotion: boolean }) {
+}: SparkButtonProps) {
   const [sparks, setSparks] = useState<number[]>([]);
-  const trigger = () => {
+  const trigger = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!reduceMotion) {
       setSparks((prev) => [...prev, Date.now()].slice(-12));
       setTimeout(() => setSparks((prev) => prev.slice(1)), 500);
     }
-    onClick?.();
+    onClick?.(e);
   };
   return (
     <motion.button
@@ -97,19 +103,18 @@ function SparkButton({
       {...rest}
     >
       <span className="relative inline-flex items-center justify-center">
-        {children}
-        {!reduceMotion &&
-          sparks.map((id, idx) => (
-            <motion.span
-              key={id}
-              className="pointer-events-none absolute"
-              initial={{ opacity: 0, scale: 0.4, y: 0 }}
-              animate={{ opacity: [0.9, 0], scale: [1, 1.4], y: -10 - idx * 2 }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-            >
-              ✨
-            </motion.span>
-          ))}
+        {children as React.ReactNode}
+        {!reduceMotion && sparks.map((spark) => (
+          <motion.span
+            key={spark}
+            initial={{ opacity: 1, transform: 'scale(0)' }}
+            animate={{ opacity: 0, transform: 'scale(1.5)' }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+            className="absolute inset-0 rounded-full bg-white/20"
+          >
+            âœ¨
+          </motion.span>
+        ))}
       </span>
     </motion.button>
   );
@@ -171,9 +176,6 @@ function AppScreensSlider({ reduceMotion }: { reduceMotion: boolean }) {
       className="relative w-full max-w-md will-change-transform"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      onMouseEnter={(e) => {
-        stopAutoplay();
-      }}
       onMouseMove={(e) => {
         if (reduceMotion || typeof window === "undefined" || window.innerWidth < 900) return;
         const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -183,7 +185,6 @@ function AppScreensSlider({ reduceMotion }: { reduceMotion: boolean }) {
       }}
       onMouseLeave={() => {
         setTilt({ x: 0, y: 0 });
-        startAutoplay();
       }}
       style={{ transform: `perspective(1000px) rotateX(${tilt.y}deg) rotateY(${tilt.x}deg)` }}
       ref={sliderRef}
@@ -204,9 +205,9 @@ function AppScreensSlider({ reduceMotion }: { reduceMotion: boolean }) {
           </div>
         </div>
         <div className="mt-6 flex items-center justify-center gap-4">
-          <motion.button onClick={prev} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-[#231133] via-[#130b1f] to-[#241144] text-white shadow-[0_0_18px_rgba(147,91,255,0.45)] transition-transform" whileHover={reduceMotion ? undefined : { scale: 1.05 }} whileTap={reduceMotion ? undefined : { scale: 0.95 }}><ChevronLeft className="h-5 w-5" /></motion.button>
+          <motion.button onClick={prev} className="hidden md:flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-[#231133] via-[#130b1f] to-[#241144] text-white shadow-[0_0_18px_rgba(147,91,255,0.45)] transition-transform" whileHover={reduceMotion ? undefined : { scale: 1.05 }} whileTap={reduceMotion ? undefined : { scale: 0.95 }}><ChevronLeft className="h-5 w-5" /></motion.button>
           <div className="flex gap-1.5">{APP_SCREENS.map((_, i) => <button key={i} onClick={() => goTo(i)} className={`h-1.5 rounded-full transition-all ${i === activeIndex ? "w-6 bg-[#a855f7]" : "w-2 bg-white/30"}`} />)}</div>
-          <motion.button onClick={next} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-[#231133] via-[#130b1f] to-[#241144] text-white shadow-[0_0_18px_rgba(147,91,255,0.45)] transition-transform" whileHover={reduceMotion ? undefined : { scale: 1.05 }} whileTap={reduceMotion ? undefined : { scale: 0.95 }}><ChevronRight className="h-5 w-5" /></motion.button>
+          <motion.button onClick={next} className="hidden md:flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-[#231133] via-[#130b1f] to-[#241144] text-white shadow-[0_0_18px_rgba(147,91,255,0.45)] transition-transform" whileHover={reduceMotion ? undefined : { scale: 1.05 }} whileTap={reduceMotion ? undefined : { scale: 0.95 }}><ChevronRight className="h-5 w-5" /></motion.button>
         </div>
       </div>
       <motion.div key={APP_SCREENS[activeIndex].id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }} className="mt-4 rounded-2xl border border-white/10 bg-gradient-to-br from-[#1a0f2b]/80 via-[#0c071a]/80 to-[#1a0f2b]/70 p-4 shadow-[0_18px_36px_rgba(53,16,109,0.35)]">
@@ -247,7 +248,7 @@ export default function Home() {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [emojiRunners, setEmojiRunners] = useState<Array<{ glyph: string; top: string; delay: number; duration: number; repeatDelay: number; direction: "ltr" | "rtl" }>>([]);
-  const [allowRunners, setAllowRunners] = useState(false);
+  const [allowRunners, setAllowRunners] = useState(true);
   const heroGlowPoints = useMemo(
     () =>
       Array.from({ length: 24 }, (_, i) => ({
@@ -284,26 +285,26 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const checkWidth = () => setAllowRunners(typeof window !== "undefined" && window.innerWidth > 640);
+    const checkWidth = () => setAllowRunners(true);
     checkWidth();
     window.addEventListener("resize", checkWidth);
     return () => window.removeEventListener("resize", checkWidth);
   }, []);
 
-  useEffect(() => {
+      useEffect(() => {
     if (reduceMotion || !allowRunners) {
       setEmojiRunners([]);
       return;
     }
-    const glyphs = ["✨", "🪩", "🎈", "⭐", "🚀", "🌌"];
-    const runners = Array.from({ length: 7 }, (_, i) => {
-      const direction: "ltr" | "rtl" = i % 2 === 0 ? "ltr" : "rtl";
+    const glyphs = ["✨", "🌙", "🌌", "⭐", "🌠", "🪐", "🌃"];
+    const runners = Array.from({ length: 4 }, () => {
+      const direction: "ltr" | "rtl" = Math.random() > 0.5 ? "ltr" : "rtl";
       return {
-        glyph: glyphs[i % glyphs.length],
+        glyph: glyphs[Math.floor(Math.random() * glyphs.length)],
         top: `${8 + Math.random() * 76}%`,
-        delay: i * 1 + Math.random() * 0.8,
-        duration: 6 + Math.random() * 2.5,
-        repeatDelay: 1.2 + Math.random() * 2,
+        delay: Math.random() * 2,
+        duration: 3.5 + Math.random() * 2,
+        repeatDelay: 1 + Math.random() * 2.5,
         direction,
       };
     });
@@ -402,8 +403,8 @@ export default function Home() {
         <div className="absolute -bottom-24 left-10 h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle,rgba(111,66,193,0.18),transparent_55%)] blur-3xl" />
       </div>
 
-      <header className={`fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/70 via-black/40 to-black/10 backdrop-blur-xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out will-change-transform ${navHidden ? "-translate-y-full opacity-0" : "translate-y-0 opacity-100"}`}>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-b from-transparent via-black/35 to-black/70" />
+      <header className={`fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/75 via-black/35 to-transparent backdrop-blur-lg shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition-all duration-300 ease-out will-change-transform ${navHidden ? "-translate-y-full opacity-0" : "translate-y-0 opacity-100"}`}>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent via-black/25 to-black/60" />
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 md:px-6 relative">
           <div className="heading-font text-lg bg-gradient-to-r from-purple-400 via-fuchsia-400 to-cyan-300 bg-clip-text text-transparent drop-shadow-[0_0_14px_rgba(168,85,247,0.45)]">NATAA</div>
           <div className="flex flex-1 justify-end">
@@ -430,14 +431,14 @@ export default function Home() {
             </div>
           ) : null}
 
-          <div className="relative mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-12 px-4 py-14 md:flex-row md:items-center md:px-6 md:py-20">
+          <div className="relative mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-12 px-4 py-14 md:flex-row md:items-start md:justify-between md:px-6 md:py-20">
             <div className="flex-1 space-y-6">
               <motion.div {...blurReveal} transition={{ duration: 0.7 }}>
                 <h1 className="heading-font text-4xl leading-tight text-white md:text-6xl">Your nightlife wingman.</h1>
                 <p className="max-w-2xl text-lg text-white/80">
                   <span className="heading-font text-xl text-white md:text-2xl">Check in, see who is around, connect.</span>
                   <br />
-                  <span className="text-white/75">Live radar with real headcounts, QR-verified check-ins, blur until you choose, and 100-second chats to keep it moving.</span>
+                  <span className="text-white/75 font-normal">Live radar, real headcounts, QR check-ins, blur until you choose, 100-second chats.</span>
                 </p>
               </motion.div>
 
@@ -475,14 +476,14 @@ export default function Home() {
             </motion.div>
             </div>
 
-            <motion.div {...blurReveal} transition={{ duration: 0.8, delay: 0.1 }} className="flex flex-1 items-center justify-center">
+            <motion.div {...blurReveal} transition={{ duration: 0.8, delay: 0.1 }} className="flex flex-1 items-start justify-center md:justify-start md:pl-4">
               <AppScreensSlider reduceMotion={reduceMotion} />
             </motion.div>
           </div>
         </section>
         <section className="mx-auto max-w-6xl px-4 py-12 md:px-6 scroll-mt-24">
           <motion.h2 {...blurReveal} transition={{ duration: 0.7 }} className="heading-font mb-3 text-[32px] text-white md:text-[44px]">Signals at a glance.</motion.h2>
-          <p className="mb-6 max-w-[70ch] text-white/75">See headcount, proximity, and the chats you unlock after check-in before you move.</p>
+          <p className="mb-6 max-w-[70ch] text-white/75">Real headcount, who is close, and chats you unlock after you check in.</p>
           <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory no-scrollbar pb-2 md:grid md:auto-rows-fr md:grid-cols-3 md:gap-6">
             {SIGNAL_CARDS.map((card, idx) => (
               <motion.div key={card.label} {...cardReveal} transition={{ duration: 0.6, delay: 0.04 * idx }} className="snap-center rounded-2xl border border-[#6b21a8]/40 bg-gradient-to-br from-[#1a0f2b]/80 via-[#0c071a]/90 to-[#1a0f2b]/80 p-4 shadow-[0_18px_40px_rgba(53,16,109,0.35)] min-h-[180px] flex h-full flex-col gap-2 flex-none w-[85%] md:w-auto">
@@ -496,10 +497,10 @@ export default function Home() {
 
         <section id="features" className="mx-auto max-w-6xl px-4 py-14 md:px-6 scroll-mt-24">
           <motion.h2 {...blurReveal} transition={{ duration: 0.7 }} className="heading-font mb-3 text-[32px] text-white md:text-[44px]">Core features that are shipping.</motion.h2>
-          <p className="mb-8 max-w-[70ch] text-white/75">Wave 01 ships the essentials: live radar, verified check-ins, and host controls ready now.</p>
+          <p className="mb-8 max-w-[70ch] text-white/75">Wave 01: live radar, verified check-ins, host controls. Ready now.</p>
           <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory no-scrollbar pb-2 md:grid md:auto-rows-fr md:grid-cols-3 md:gap-6">
             {FEATURE_CARDS.map((card, idx) => (
-              <motion.div key={card.title} {...cardReveal} transition={{ duration: 0.6, delay: 0.04 * idx }} whileHover={reduceMotion ? undefined : { translateY: -6, borderColor: "rgba(212,255,0,0.35)" }} className="card-float snap-center rounded-2xl border border-white/10 bg-white/5 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.35)] min-h-[220px] flex h-full flex-col justify-between flex-none w-[80%] md:w-auto">
+              <motion.div key={card.title} {...cardReveal} transition={{ duration: 0.6, delay: 0.04 * idx }} whileHover={reduceMotion ? undefined : { translateY: -6, borderColor: "rgba(212,255,0,0.35)" }} className="card-float snap-center rounded-2xl border border-white/10 bg-white/5 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.35)] min-h-[240px] flex h-full flex-col justify-between flex-none w-[80%] md:w-auto">
                 <div className="flex items-center justify-between">
                   <div className="mono-font text-[11px] uppercase tracking-[0.18em]" style={{ color: card.accent }}>{card.tag}</div>
                   <StatusChip label="Live" color={card.accent} />
@@ -522,7 +523,7 @@ export default function Home() {
 
             <div className="flex gap-5 overflow-x-auto snap-x snap-mandatory no-scrollbar pb-2 md:grid md:auto-rows-fr md:grid-cols-3 md:gap-6">
               {UPCOMING_EVENTS.map((event, idx) => (
-                <motion.div key={event.title} {...cardReveal} transition={{ duration: 0.6, delay: 0.05 * idx }} whileHover={reduceMotion ? undefined : { translateY: -8, borderColor: "rgba(212,255,0,0.35)" }} className="group relative flex h-full min-h-[360px] flex-col overflow-hidden snap-center rounded-3xl border border-white/10 bg-gradient-to-b from-white/10 via-black/60 to-black/90 shadow-[0_25px_60px_rgba(0,0,0,0.45)] flex-none w-[82%] md:w-auto">
+                <motion.div key={event.title} {...cardReveal} transition={{ duration: 0.6, delay: 0.05 * idx }} whileHover={reduceMotion ? undefined : { translateY: -8, borderColor: "rgba(212,255,0,0.35)" }} className="group relative flex h-full min-h-[320px] flex-col overflow-hidden snap-center rounded-3xl border border-white/10 bg-gradient-to-b from-white/10 via-black/60 to-black/90 shadow-[0_25px_60px_rgba(0,0,0,0.45)] flex-none w-[82%] md:w-auto">
                   <div className="relative aspect-[4/5] overflow-hidden">
                     <Image src={event.image} alt={event.title} fill sizes="(max-width: 768px) 82vw, 360px" className="object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
@@ -705,6 +706,11 @@ export default function Home() {
     </div>
   );
 }
+
+
+
+
+
 
 
 
