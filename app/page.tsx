@@ -62,18 +62,18 @@ function AppScreensSlider() {
   const prev = useCallback(() => { setDirection(-1); setActiveIndex((p) => (p - 1 + APP_SCREENS.length) % APP_SCREENS.length); }, []);
   const next = useCallback(() => { setDirection(1); setActiveIndex((p) => (p + 1) % APP_SCREENS.length); }, []);
   useEffect(() => {
-    const id = setTimeout(() => {
+    const id = setInterval(() => {
       setDirection(1);
       setActiveIndex((p) => (p + 1) % APP_SCREENS.length);
-    }, 4500);
-    return () => clearTimeout(id);
-  }, [activeIndex]);
+    }, 5200);
+    return () => clearInterval(id);
+  }, []);
   const slideVariants = {
-    enter: (dir: number) => ({ x: dir > 0 ? 120 : -120, opacity: 0, scale: 0.96, filter: "blur(10px)" }),
-    center: { x: 0, opacity: 1, scale: 1, filter: "blur(0px)" },
-    exit: (dir: number) => ({ x: dir < 0 ? 120 : -120, opacity: 0, scale: 0.96, filter: "blur(10px)" }),
+    enter: (dir: number) => ({ x: dir > 0 ? 60 : -60, opacity: 0, scale: 0.98 }),
+    center: { x: 0, opacity: 1, scale: 1 },
+    exit: (dir: number) => ({ x: dir < 0 ? 60 : -60, opacity: 0, scale: 0.98 }),
   };
-  const slideTransition = { type: "spring", stiffness: 260, damping: 30, mass: 0.9 };
+  const slideTransition = { duration: 0.45, ease: [0.4, 0.1, 0.2, 1] };
   const handleTouchStart = (e: TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
   };
@@ -89,7 +89,7 @@ function AppScreensSlider() {
 
   return (
     <div className="relative w-full max-w-md" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <motion.div className="absolute -inset-10 rounded-full blur-3xl" animate={{ background: ["radial-gradient(circle, rgba(147,91,255,0.2) 0%, transparent 70%)","radial-gradient(circle, rgba(88,28,135,0.18) 0%, transparent 70%)","radial-gradient(circle, rgba(236,72,153,0.18) 0%, transparent 70%)"] }} transition={{ duration: 4, repeat: Number.POSITIVE_INFINITY }} />
+      <motion.div className="absolute -inset-10 rounded-full blur-3xl" style={{ background: "radial-gradient(circle, rgba(147,91,255,0.18) 0%, transparent 70%)" }} animate={{ opacity: [0.6, 0.9, 0.6] }} transition={{ duration: 6, repeat: Number.POSITIVE_INFINITY }} />
       <div className="relative mx-auto w-[260px] md:w-[300px]">
         <div className="relative rounded-[3rem] bg-gradient-to-b from-[#5b1bd6]/60 via-[#0c071a] to-[#0c071a] p-[3px] shadow-[0_30px_70px_rgba(54,16,114,0.45)]">
           <div className="relative overflow-hidden rounded-[2.8rem] bg-[#0a0a0f] p-2">
@@ -166,15 +166,13 @@ export default function Home() {
     const handleScroll = () => {
       const current = window.scrollY;
       const delta = current - lastScrollY.current;
-      const scrollingDown = delta > 1;
-      const scrollingUp = delta < -1;
+      const scrollingDown = delta > 0;
+      const scrollingUp = delta < 0;
       let nextHidden = navHiddenRef.current;
-      if (current <= 4) {
+      if (current <= 6 || scrollingUp) {
         nextHidden = false;
       } else if (scrollingDown) {
         nextHidden = true;
-      } else if (scrollingUp) {
-        nextHidden = false;
       }
       if (nextHidden !== navHiddenRef.current) {
         navHiddenRef.current = nextHidden;
@@ -267,7 +265,7 @@ export default function Home() {
           </div>
         </div>
       </header>
-      <main className="relative z-10">
+      <main className="relative z-10 pt-20 md:pt-24">
         <section className="relative overflow-hidden">
           <div className="absolute inset-0 opacity-90" style={heroGradient} />
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
@@ -377,7 +375,7 @@ export default function Home() {
                       <h3 className="heading-font text-2xl text-white">{event.title}</h3>
                       <p className="text-white/60">{event.venue}</p>
                     </div>
-                    <div className="mt-2 text-xs text-white/70">Live radar ï¿½ Verified crowd</div>
+                    <div className="mt-2 text-xs text-white/70">Live radar | Verified crowd</div>
                   </div>
                 </motion.div>
               ))}
@@ -492,6 +490,8 @@ export default function Home() {
     </div>
   );
 }
+
+
 
 
 
