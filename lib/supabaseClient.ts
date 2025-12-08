@@ -8,15 +8,19 @@ const supabaseKey =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 let client: SupabaseClient | null = null;
+let warned = false;
 
 if (supabaseUrl && supabaseKey) {
   client = createClient(supabaseUrl, supabaseKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 } else {
-  console.warn(
-    "Supabase env vars missing. Set NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY (or Expo equivalents)."
-  );
+  if (process.env.NODE_ENV !== "production" && !warned) {
+    console.warn(
+      "Supabase env vars missing. Set NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY (or Expo equivalents)."
+    );
+    warned = true;
+  }
 }
 
 export const getSupabaseClient = () => client;

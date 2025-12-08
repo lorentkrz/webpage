@@ -8,7 +8,8 @@ const nextConfig = {
       { protocol: "https", hostname: "ghostaroundtheglobe.com" },
       { protocol: "https", hostname: "www.digitalstudioindia.com" },
       { protocol: "https", hostname: "images.unsplash.com" },
-      { protocol: "https", hostname: "oecjiyotsuwvepgzmujs.supabase.co" }
+      { protocol: "https", hostname: "oecjiyotsuwvepgzmujs.supabase.co" },
+      { protocol: "https", hostname: "api.qrserver.com" }
     ]
   }
 };

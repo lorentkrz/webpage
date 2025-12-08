@@ -25,6 +25,10 @@ export const metadata: Metadata = {
   title: "Nataa | The night has eyes",
   description:
     "We are building the live radar for nightlife. Kosovo first, then worldwide. See the vibe. Scan the crowd. Connect before the timer dies.",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+  },
   openGraph: {
     title: "Nataa | The night has eyes",
     description:

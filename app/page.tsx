@@ -1,8 +1,10 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useMemo, useState, useCallback, useRef, type CSSProperties, type FormEvent, type TouchEvent } from "react";
+import type React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import Image from "next/image";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -26,12 +28,12 @@ const SIGNAL_CARDS = [
 ];
 
 const FEATURE_CARDS = [
-  { tag: "Live radar", title: "Heat + headcount, live", description: "Every venue, refreshed on the minute. See active counts on the map and who is heating up.", accent: "#76e4f7" },
-  { tag: "Check-in unlocks", title: "QR verified", description: "QR + device signals verify real people in real rooms. Message people inside only after you check in.", accent: "#d4ff00" },
-  { tag: "Blur control", title: "Privacy first", description: "Blur stays on until you connect. You decide who sees you once you are verified at the venue.", accent: "#b58bff" },
-  { tag: "100s chats", title: "High intent only", description: "One credit, 100 seconds to make a move. No endless swiping or ghost feeds.", accent: "#ff6b99" },
-  { tag: "Host console", title: "Real-time controls", description: "Spotlight sets, tune cover, and see verified audience signals inside.", accent: "#8bffcc" },
-  { tag: "Geo check-ins", title: "Map + presence", description: "Geolocation-backed check-ins tie you to the venue. Map shows real counts before you move.", accent: "#ffc266" },
+  { tag: "Live radar", title: "Heat + headcount, live", description: "Every venue, refreshed on the minute. See active counts on the map and who is heating up.", accent: "#76e4f7", meta: "Updated 2m ago" },
+  { tag: "Check-in unlocks", title: "QR verified", description: "QR + device signals verify real people in real rooms. Message people inside only after you check in.", accent: "#d4ff00", meta: "Spoof-proofed" },
+  { tag: "Blur control", title: "Privacy first", description: "Blur stays on until you connect. You decide who sees you once you are verified at the venue.", accent: "#b58bff", meta: "Safe by default" },
+  { tag: "100s chats", title: "High intent only", description: "One credit, 100 seconds to make a move. No endless swiping or ghost feeds.", accent: "#ff6b99", meta: "Timer on" },
+  { tag: "Host console", title: "Real-time controls", description: "Spotlight sets, tune cover, and see verified audience signals inside.", accent: "#8bffcc", meta: "Live controls" },
+  { tag: "Geo check-ins", title: "Map + presence", description: "Geolocation-backed check-ins tie you to the venue. Map shows real counts before you move.", accent: "#ffc266", meta: "Precision locks" },
 ];
 
 const UPCOMING_EVENTS = [
@@ -54,26 +56,103 @@ const nextWaveTarget = () => {
   const year = now.getMonth() > 1 || (now.getMonth() === 1 && now.getDate() > 19) ? now.getFullYear() + 1 : now.getFullYear();
   return Date.UTC(year, 1, 19, 23, 59, 59);
 };
-function AppScreensSlider() {
+
+function StatusChip({ label, color = "#a855f7" }: { label: string; color?: string }) {
+  return (
+    <motion.span
+      className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-white/80"
+      style={{ color }}
+      animate={{ boxShadow: ["0 0 0 0 rgba(255,255,255,0.18)", "0 0 0 8px rgba(255,255,255,0)"] }}
+      transition={{ duration: 1.8, repeat: Number.POSITIVE_INFINITY, repeatType: "loop" }}
+    >
+      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+      {label}
+    </motion.span>
+  );
+}
+
+function SparkButton({
+  children,
+  onClick,
+  className,
+  disabled,
+  reduceMotion,
+  ...rest
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { reduceMotion: boolean }) {
+  const [sparks, setSparks] = useState<number[]>([]);
+  const trigger = () => {
+    if (!reduceMotion) {
+      setSparks((prev) => [...prev, Date.now()].slice(-12));
+      setTimeout(() => setSparks((prev) => prev.slice(1)), 500);
+    }
+    onClick?.();
+  };
+  return (
+    <motion.button
+      onClick={trigger}
+      disabled={disabled}
+      className={className}
+      whileHover={reduceMotion ? undefined : { translateY: -2 }}
+      whileTap={reduceMotion ? undefined : { translateY: 0 }}
+      {...rest}
+    >
+      <span className="relative inline-flex items-center justify-center">
+        {children}
+        {!reduceMotion &&
+          sparks.map((id, idx) => (
+            <motion.span
+              key={id}
+              className="pointer-events-none absolute"
+              initial={{ opacity: 0, scale: 0.4, y: 0 }}
+              animate={{ opacity: [0.9, 0], scale: [1, 1.4], y: -10 - idx * 2 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+            >
+              ✨
+            </motion.span>
+          ))}
+      </span>
+    </motion.button>
+  );
+}
+function AppScreensSlider({ reduceMotion }: { reduceMotion: boolean }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState(0);
   const touchStartX = useRef<number | null>(null);
+  const sliderRef = useRef<HTMLDivElement | null>(null);
+  const autoplayRef = useRef<NodeJS.Timeout | null>(null);
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
   const goTo = useCallback((index: number) => { setDirection(index > activeIndex ? 1 : -1); setActiveIndex(index); }, [activeIndex]);
   const prev = useCallback(() => { setDirection(-1); setActiveIndex((p) => (p - 1 + APP_SCREENS.length) % APP_SCREENS.length); }, []);
   const next = useCallback(() => { setDirection(1); setActiveIndex((p) => (p + 1) % APP_SCREENS.length); }, []);
-  useEffect(() => {
-    const id = setInterval(() => {
+  const stopAutoplay = useCallback(() => {
+    if (autoplayRef.current) {
+      clearInterval(autoplayRef.current);
+      autoplayRef.current = null;
+    }
+  }, []);
+  const startAutoplay = useCallback(() => {
+    if (reduceMotion) return;
+    stopAutoplay();
+    autoplayRef.current = setInterval(() => {
       setDirection(1);
       setActiveIndex((p) => (p + 1) % APP_SCREENS.length);
-    }, 5200);
-    return () => clearInterval(id);
-  }, []);
+    }, 4200);
+  }, [reduceMotion, stopAutoplay]);
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      const inView = entries.some((e) => e.isIntersecting);
+      if (inView) startAutoplay();
+      else stopAutoplay();
+    }, { threshold: 0.35 });
+    if (sliderRef.current) observer.observe(sliderRef.current);
+    return () => { observer.disconnect(); stopAutoplay(); };
+  }, [startAutoplay, stopAutoplay]);
   const slideVariants = {
-    enter: (dir: number) => ({ x: dir > 0 ? 60 : -60, opacity: 0, scale: 0.98 }),
-    center: { x: 0, opacity: 1, scale: 1 },
-    exit: (dir: number) => ({ x: dir < 0 ? 60 : -60, opacity: 0, scale: 0.98 }),
+    enter: () => ({ opacity: 0, scale: 0.985 }),
+    center: { opacity: 1, scale: 1 },
+    exit: () => ({ opacity: 0, scale: 0.985 }),
   };
-  const slideTransition = { duration: 0.45, ease: [0.4, 0.1, 0.2, 1] };
+  const slideTransition = { duration: 0.3, ease: [0.4, 0.1, 0.2, 1] };
   const handleTouchStart = (e: TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
   };
@@ -88,7 +167,27 @@ function AppScreensSlider() {
   const activeScreen = APP_SCREENS[activeIndex];
 
   return (
-    <div className="relative w-full max-w-md" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    <div
+      className="relative w-full max-w-md will-change-transform"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onMouseEnter={(e) => {
+        stopAutoplay();
+      }}
+      onMouseMove={(e) => {
+        if (reduceMotion || typeof window === "undefined" || window.innerWidth < 900) return;
+        const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width - 0.5) * 8;
+        const y = ((e.clientY - rect.top) / rect.height - 0.5) * -8;
+        setTilt({ x, y });
+      }}
+      onMouseLeave={() => {
+        setTilt({ x: 0, y: 0 });
+        startAutoplay();
+      }}
+      style={{ transform: `perspective(1000px) rotateX(${tilt.y}deg) rotateY(${tilt.x}deg)` }}
+      ref={sliderRef}
+    >
       <motion.div className="absolute -inset-10 rounded-full blur-3xl" style={{ background: "radial-gradient(circle, rgba(147,91,255,0.18) 0%, transparent 70%)" }} animate={{ opacity: [0.6, 0.9, 0.6] }} transition={{ duration: 6, repeat: Number.POSITIVE_INFINITY }} />
       <div className="relative mx-auto w-[260px] md:w-[300px]">
         <div className="relative rounded-[3rem] bg-gradient-to-b from-[#5b1bd6]/60 via-[#0c071a] to-[#0c071a] p-[3px] shadow-[0_30px_70px_rgba(54,16,114,0.45)]">
@@ -97,7 +196,7 @@ function AppScreensSlider() {
             <div className="relative aspect-[9/19.5] overflow-hidden rounded-[2.4rem] bg-[#0a0a0f]">
               <AnimatePresence initial={false} custom={direction} mode="wait">
                 <motion.div key={activeIndex} custom={direction} variants={slideVariants} initial="enter" animate="center" exit="exit" transition={slideTransition} className="absolute inset-0">
-                  <img src={activeScreen.image} alt={activeScreen.title} className="h-full w-full object-cover object-top" />
+                  <Image src={activeScreen.image} alt={activeScreen.title} fill sizes="(max-width: 768px) 260px, 300px" className="object-cover object-top" priority={activeIndex === 0} />
                   <div className="absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-transparent" />
                 </motion.div>
               </AnimatePresence>
@@ -105,9 +204,9 @@ function AppScreensSlider() {
           </div>
         </div>
         <div className="mt-6 flex items-center justify-center gap-4">
-          <button onClick={prev} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-[#231133] via-[#130b1f] to-[#241144] text-white shadow-[0_0_18px_rgba(147,91,255,0.45)] hover:brightness-110 active:scale-95 transition-transform"><ChevronLeft className="h-5 w-5" /></button>
+          <motion.button onClick={prev} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-[#231133] via-[#130b1f] to-[#241144] text-white shadow-[0_0_18px_rgba(147,91,255,0.45)] transition-transform" whileHover={reduceMotion ? undefined : { scale: 1.05 }} whileTap={reduceMotion ? undefined : { scale: 0.95 }}><ChevronLeft className="h-5 w-5" /></motion.button>
           <div className="flex gap-1.5">{APP_SCREENS.map((_, i) => <button key={i} onClick={() => goTo(i)} className={`h-1.5 rounded-full transition-all ${i === activeIndex ? "w-6 bg-[#a855f7]" : "w-2 bg-white/30"}`} />)}</div>
-          <button onClick={next} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-[#231133] via-[#130b1f] to-[#241144] text-white shadow-[0_0_18px_rgba(147,91,255,0.45)] hover:brightness-110 active:scale-95 transition-transform"><ChevronRight className="h-5 w-5" /></button>
+          <motion.button onClick={next} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-[#231133] via-[#130b1f] to-[#241144] text-white shadow-[0_0_18px_rgba(147,91,255,0.45)] transition-transform" whileHover={reduceMotion ? undefined : { scale: 1.05 }} whileTap={reduceMotion ? undefined : { scale: 0.95 }}><ChevronRight className="h-5 w-5" /></motion.button>
         </div>
       </div>
       <motion.div key={APP_SCREENS[activeIndex].id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }} className="mt-4 rounded-2xl border border-white/10 bg-gradient-to-br from-[#1a0f2b]/80 via-[#0c071a]/80 to-[#1a0f2b]/70 p-4 shadow-[0_18px_36px_rgba(53,16,109,0.35)]">
@@ -144,6 +243,21 @@ export default function Home() {
   const navHiddenRef = useRef(false);
   const lastScrollY = useRef(0);
   const targetTime = useMemo(() => nextWaveTarget(), []);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [emojiRunners, setEmojiRunners] = useState<Array<{ glyph: string; top: string; delay: number; duration: number; repeatDelay: number; direction: "ltr" | "rtl" }>>([]);
+  const [allowRunners, setAllowRunners] = useState(false);
+  const heroGlowPoints = useMemo(
+    () =>
+      Array.from({ length: 24 }, (_, i) => ({
+        x: (i * 137) % 1200,
+        y: (i * 211) % 700,
+        duration: 11 + (i % 8),
+        delay: (i % 6) * 0.7,
+      })),
+    []
+  );
 
   useEffect(() => {
     const tick = () => {
@@ -162,12 +276,51 @@ export default function Home() {
   }, [targetTime]);
 
   useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const handlePrefers = () => setReduceMotion(mq.matches);
+    handlePrefers();
+    mq.addEventListener("change", handlePrefers);
+    return () => mq.removeEventListener("change", handlePrefers);
+  }, []);
+
+  useEffect(() => {
+    const checkWidth = () => setAllowRunners(typeof window !== "undefined" && window.innerWidth > 640);
+    checkWidth();
+    window.addEventListener("resize", checkWidth);
+    return () => window.removeEventListener("resize", checkWidth);
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion || !allowRunners) {
+      setEmojiRunners([]);
+      return;
+    }
+    const glyphs = ["✨", "🪩", "🎈", "⭐", "🚀", "🌌"];
+    const runners = Array.from({ length: 7 }, (_, i) => {
+      const direction: "ltr" | "rtl" = i % 2 === 0 ? "ltr" : "rtl";
+      return {
+        glyph: glyphs[i % glyphs.length],
+        top: `${8 + Math.random() * 76}%`,
+        delay: i * 1 + Math.random() * 0.8,
+        duration: 6 + Math.random() * 2.5,
+        repeatDelay: 1.2 + Math.random() * 2,
+        direction,
+      };
+    });
+    setEmojiRunners(runners);
+  }, [reduceMotion, allowRunners]);
+
+  useEffect(() => {
     lastScrollY.current = window.scrollY;
     const handleScroll = () => {
       const current = window.scrollY;
       const delta = current - lastScrollY.current;
       const scrollingDown = delta > 0;
       const scrollingUp = delta < 0;
+      setShowBackToTop(current > 640);
+      const doc = document.documentElement;
+      const maxScroll = doc.scrollHeight - doc.clientHeight || 1;
+      setScrollProgress(Math.min(1, Math.max(0, current / maxScroll)));
       let nextHidden = navHiddenRef.current;
       if (current <= 6 || scrollingUp) {
         nextHidden = false;
@@ -249,18 +402,18 @@ export default function Home() {
         <div className="absolute -bottom-24 left-10 h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle,rgba(111,66,193,0.18),transparent_55%)] blur-3xl" />
       </div>
 
-      <header className={`fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/70 via-black/40 to-black/10 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out will-change-transform ${navHidden ? "-translate-y-full opacity-0" : "translate-y-0 opacity-100"}`}>
+      <header className={`fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/70 via-black/40 to-black/10 backdrop-blur-xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out will-change-transform ${navHidden ? "-translate-y-full opacity-0" : "translate-y-0 opacity-100"}`}>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-b from-transparent via-black/35 to-black/70" />
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 md:px-6 relative">
           <div className="heading-font text-lg bg-gradient-to-r from-purple-400 via-fuchsia-400 to-cyan-300 bg-clip-text text-transparent drop-shadow-[0_0_14px_rgba(168,85,247,0.45)]">NATAA</div>
           <div className="flex flex-1 justify-end">
-            <nav className="flex w-full max-w-xl items-center gap-2 overflow-x-auto rounded-full border border-white/12 bg-black/30 backdrop-blur-xl px-2 py-2 text-[11px] uppercase tracking-[0.18em] text-white/90 shadow-[0_18px_40px_rgba(0,0,0,0.35)] no-scrollbar">
-              <a className="hidden rounded-full border border-white/10 px-3 py-1.5 hover:border-[#d4ff00]/50 hover:text-[#d4ff00] md:inline" href="https://instagram.com/Nataa.app" target="_blank" rel="noreferrer">IG</a>
-              <a className="rounded-full border border-white/10 px-3 py-1.5 hover:border-[#a855f7]/50 hover:text-[#d4ff00]" href="#events">Events</a>
-              <a className="rounded-full border border-white/10 px-3 py-1.5 hover:border-[#a855f7]/50 hover:text-[#d4ff00]" href="#features">Features</a>
-              <a className="rounded-full border border-white/10 px-3 py-1.5 hover:border-[#a855f7]/50 hover:text-[#d4ff00]" href="#download-apk">Download</a>
-              <a className="rounded-full border border-white/10 px-3 py-1.5 hover:border-[#a855f7]/50 hover:text-[#d4ff00]" href="#venues">Venues</a>
-              <a className="rounded-full border border-purple-400/60 bg-gradient-to-r from-purple-600 to-fuchsia-500 px-3 py-1.5 text-white shadow-[0_0_16px_rgba(147,91,255,0.4)]" href="#waitlist">Waitlist</a>
+            <nav className="flex w-full max-w-xl items-center gap-2 overflow-x-auto rounded-full border border-white/12 bg-black/30 backdrop-blur-lg px-2.5 py-2.5 text-[11px] uppercase tracking-[0.18em] text-white/90 shadow-[0_18px_40px_rgba(0,0,0,0.35)] shadow-inner no-scrollbar">
+              <a className="hidden rounded-full border border-white/10 px-3.5 py-2.5 min-h-[44px] hover:border-[#d4ff00]/50 hover:text-[#d4ff00] md:inline" href="https://instagram.com/Nataa.app" target="_blank" rel="noreferrer">IG</a>
+              <a className="rounded-full border border-white/10 px-3.5 py-2.5 min-h-[44px] hover:border-[#a855f7]/50 hover:text-[#d4ff00]" href="#events">Events</a>
+              <a className="rounded-full border border-white/10 px-3.5 py-2.5 min-h-[44px] hover:border-[#a855f7]/50 hover:text-[#d4ff00]" href="#features">Features</a>
+              <a className="rounded-full border border-white/10 px-3.5 py-2.5 min-h-[44px] hover:border-[#a855f7]/50 hover:text-[#d4ff00]" href="#download-apk">Download</a>
+              <a className="rounded-full border border-white/10 px-3.5 py-2.5 min-h-[44px] hover:border-[#a855f7]/50 hover:text-[#d4ff00]" href="#venues">Venues</a>
+              <a className="rounded-full border border-purple-400/60 bg-gradient-to-r from-purple-600 to-fuchsia-500 px-3.5 py-2.5 min-h-[44px] text-white shadow-[0_0_16px_rgba(147,91,255,0.4)]" href="#waitlist">Waitlist</a>
             </nav>
           </div>
         </div>
@@ -269,11 +422,13 @@ export default function Home() {
         <section className="relative overflow-hidden">
           <div className="absolute inset-0 opacity-90" style={heroGradient} />
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
-          <div className="absolute inset-0">
-            {[...Array(24)].map((_, i) => (
-              <motion.div key={i} className="absolute h-1 w-1 rounded-full bg-cyan-300/30" initial={{ x: Math.random() * 1200, y: Math.random() * 700, opacity: 0 }} animate={{ y: -80, opacity: [0, 1, 0] }} transition={{ duration: 10 + Math.random() * 10, repeat: Number.POSITIVE_INFINITY, delay: Math.random() * 8, ease: "linear" }} />
-            ))}
-          </div>
+          {!reduceMotion ? (
+            <div className="absolute inset-0">
+              {heroGlowPoints.map((dot, i) => (
+                <motion.div key={i} className="absolute h-1 w-1 rounded-full bg-cyan-300/30 will-change-transform" initial={{ x: dot.x, y: dot.y, opacity: 0 }} animate={{ y: -80, opacity: [0, 1, 0] }} transition={{ duration: dot.duration, repeat: Number.POSITIVE_INFINITY, delay: dot.delay, ease: "linear" }} />
+              ))}
+            </div>
+          ) : null}
 
           <div className="relative mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-12 px-4 py-14 md:flex-row md:items-center md:px-6 md:py-20">
             <div className="flex-1 space-y-6">
@@ -286,9 +441,9 @@ export default function Home() {
                 </p>
               </motion.div>
 
-              <motion.div {...blurReveal} transition={{ duration: 0.7, delay: 0.05 }} className="flex flex-wrap gap-3 text-sm text-white/70">
+              <motion.div {...blurReveal} transition={{ duration: 0.7, delay: 0.05 }} className="flex flex-wrap gap-3 text-sm text-white/85">
                 {["Live heatmap", "Verified check-ins", "100-second chats", "Host console"].map((pill) => (
-                  <span key={pill} className="rounded-full border border-white/10 px-3 py-1">{pill}</span>
+                  <span key={pill} className="rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5">{pill}</span>
                 ))}
               </motion.div>
 
@@ -312,22 +467,22 @@ export default function Home() {
                   {waitlistError ? <p className="text-sm text-[#ff98a4]">{waitlistError}</p> : null}
                   {waitlistState === "success" ? <p className="text-sm text-[#d4ff00]">You are in. We will email your invite.</p> : (
                     <div className="flex flex-wrap items-center gap-3">
-                      <button type="submit" disabled={waitlistState === "loading"} className="rounded-xl border border-purple-400/60 bg-gradient-to-r from-purple-600 to-fuchsia-500 px-5 py-3 text-sm font-semibold text-white shadow-[0_0_18px_rgba(147,91,255,0.45)] disabled:opacity-60">{waitlistState === "loading" ? "Joining..." : "Join the waitlist"}</button>
+                    <SparkButton reduceMotion={reduceMotion} type="submit" disabled={waitlistState === "loading"} className="rounded-xl border border-purple-400/60 bg-gradient-to-r from-purple-600 to-fuchsia-500 px-5 py-3 text-sm font-semibold text-white shadow-[0_0_18px_rgba(147,91,255,0.45)] disabled:opacity-60">{waitlistState === "loading" ? "Joining..." : "Join the waitlist"}</SparkButton>
                       <span className="mono-font text-xs uppercase tracking-[0.2em] text-white/60">No spam. Invite only.</span>
                     </div>
-                  )}
-                </form>
-              </motion.div>
+                )}
+              </form>
+            </motion.div>
             </div>
 
             <motion.div {...blurReveal} transition={{ duration: 0.8, delay: 0.1 }} className="flex flex-1 items-center justify-center">
-              <AppScreensSlider />
+              <AppScreensSlider reduceMotion={reduceMotion} />
             </motion.div>
           </div>
         </section>
         <section className="mx-auto max-w-6xl px-4 py-12 md:px-6 scroll-mt-24">
-          <motion.h2 {...blurReveal} transition={{ duration: 0.7 }} className="heading-font mb-3 text-3xl text-white md:text-4xl">Signals at a glance.</motion.h2>
-          <p className="mb-6 max-w-3xl text-white/70">See headcount, proximity, and the chats you unlock after check-in before you move.</p>
+          <motion.h2 {...blurReveal} transition={{ duration: 0.7 }} className="heading-font mb-3 text-[32px] text-white md:text-[44px]">Signals at a glance.</motion.h2>
+          <p className="mb-6 max-w-[70ch] text-white/75">See headcount, proximity, and the chats you unlock after check-in before you move.</p>
           <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory no-scrollbar pb-2 md:grid md:auto-rows-fr md:grid-cols-3 md:gap-6">
             {SIGNAL_CARDS.map((card, idx) => (
               <motion.div key={card.label} {...cardReveal} transition={{ duration: 0.6, delay: 0.04 * idx }} className="snap-center rounded-2xl border border-[#6b21a8]/40 bg-gradient-to-br from-[#1a0f2b]/80 via-[#0c071a]/90 to-[#1a0f2b]/80 p-4 shadow-[0_18px_40px_rgba(53,16,109,0.35)] min-h-[180px] flex h-full flex-col gap-2 flex-none w-[85%] md:w-auto">
@@ -340,14 +495,18 @@ export default function Home() {
         </section>
 
         <section id="features" className="mx-auto max-w-6xl px-4 py-14 md:px-6 scroll-mt-24">
-          <motion.h2 {...blurReveal} transition={{ duration: 0.7 }} className="heading-font mb-3 text-3xl text-white md:text-4xl">Core features that are shipping.</motion.h2>
-          <p className="mb-8 max-w-3xl text-white/70">Wave 01 ships the essentials: live radar, verified check-ins, and host controls ready now.</p>
+          <motion.h2 {...blurReveal} transition={{ duration: 0.7 }} className="heading-font mb-3 text-[32px] text-white md:text-[44px]">Core features that are shipping.</motion.h2>
+          <p className="mb-8 max-w-[70ch] text-white/75">Wave 01 ships the essentials: live radar, verified check-ins, and host controls ready now.</p>
           <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory no-scrollbar pb-2 md:grid md:auto-rows-fr md:grid-cols-3 md:gap-6">
             {FEATURE_CARDS.map((card, idx) => (
-              <motion.div key={card.title} {...cardReveal} transition={{ duration: 0.6, delay: 0.04 * idx }} className="card-float snap-center rounded-2xl border border-white/10 bg-white/5 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.35)] min-h-[220px] flex h-full flex-col justify-between flex-none w-[80%] md:w-auto">
-                <div className="mono-font text-[11px] uppercase tracking-[0.18em]" style={{ color: card.accent }}>{card.tag}</div>
-                <h3 className="heading-font text-xl text-white">{card.title}</h3>
+              <motion.div key={card.title} {...cardReveal} transition={{ duration: 0.6, delay: 0.04 * idx }} whileHover={reduceMotion ? undefined : { translateY: -6, borderColor: "rgba(212,255,0,0.35)" }} className="card-float snap-center rounded-2xl border border-white/10 bg-white/5 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.35)] min-h-[220px] flex h-full flex-col justify-between flex-none w-[80%] md:w-auto">
+                <div className="flex items-center justify-between">
+                  <div className="mono-font text-[11px] uppercase tracking-[0.18em]" style={{ color: card.accent }}>{card.tag}</div>
+                  <StatusChip label="Live" color={card.accent} />
+                </div>
+                <h3 className="heading-font text-xl text-white mt-2">{card.title}</h3>
                 <p className="mt-2 text-sm text-white/70">{card.description}</p>
+                <div className="mt-3 text-xs text-white/65">{card.meta}</div>
               </motion.div>
             ))}
           </div>
@@ -357,29 +516,33 @@ export default function Home() {
           <div className="mx-auto max-w-6xl">
             <motion.div {...blurReveal} transition={{ duration: 0.7 }} className="mb-8 flex flex-col gap-3">
               <p className="mono-font text-[11px] uppercase tracking-[0.2em] text-white/60">Events</p>
-              <h2 className="heading-font text-3xl text-white md:text-4xl">Upcoming nights.</h2>
-              <p className="max-w-3xl text-white/70">Real headcount and vibe per venue before you leave the house.</p>
+              <h2 className="heading-font text-[32px] text-white md:text-[44px]">Upcoming nights.</h2>
+              <p className="max-w-[70ch] text-white/75">Real headcount and vibe per venue before you leave the house.</p>
             </motion.div>
 
             <div className="flex gap-5 overflow-x-auto snap-x snap-mandatory no-scrollbar pb-2 md:grid md:auto-rows-fr md:grid-cols-3 md:gap-6">
               {UPCOMING_EVENTS.map((event, idx) => (
-                <motion.div key={event.title} {...cardReveal} transition={{ duration: 0.6, delay: 0.05 * idx }} className="group relative flex h-full min-h-[320px] flex-col overflow-hidden snap-center rounded-3xl border border-white/10 bg-gradient-to-b from-white/10 via-black/60 to-black/90 shadow-[0_25px_60px_rgba(0,0,0,0.45)] flex-none w-[82%] md:w-auto">
-                  <div className="relative">
-                    <img src={event.image} alt={event.title} className="h-64 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
-                    <div className="absolute right-4 top-4 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-sm">{event.headcount}</div>
+                <motion.div key={event.title} {...cardReveal} transition={{ duration: 0.6, delay: 0.05 * idx }} whileHover={reduceMotion ? undefined : { translateY: -8, borderColor: "rgba(212,255,0,0.35)" }} className="group relative flex h-full min-h-[360px] flex-col overflow-hidden snap-center rounded-3xl border border-white/10 bg-gradient-to-b from-white/10 via-black/60 to-black/90 shadow-[0_25px_60px_rgba(0,0,0,0.45)] flex-none w-[82%] md:w-auto">
+                  <div className="relative aspect-[4/5] overflow-hidden">
+                    <Image src={event.image} alt={event.title} fill sizes="(max-width: 768px) 82vw, 360px" className="object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
+                    <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
+                    <div className="absolute right-4 top-4 flex flex-col gap-2">
+                      <div className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-sm">{event.headcount}</div>
+                      <StatusChip label="Now playing" color="#d4ff00" />
+                    </div>
                   </div>
                   <div className="flex flex-1 flex-col justify-between p-5">
                     <div>
                       <div className="text-sm text-white/70">{event.date}</div>
                       <h3 className="heading-font text-2xl text-white">{event.title}</h3>
-                      <p className="text-white/60">{event.venue}</p>
+                        <p className="text-white/60">{event.venue}</p>
+                      </div>
+                      <div className="mt-2 text-xs text-white/70">Live radar | Verified crowd</div>
                     </div>
-                    <div className="mt-2 text-xs text-white/70">Live radar | Verified crowd</div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+                  </motion.div>
+                ))}
+              </div>
           </div>
         </section>
         <section id="download-apk" className="mx-auto max-w-6xl px-4 py-16 md:px-6 scroll-mt-24">
@@ -392,7 +555,7 @@ export default function Home() {
               </div>
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
                 <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/40 p-3">
-                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&color=ffffff&bgcolor=0b0d14&data=https%3A%2F%2Flimewire.com%2Fd%2F8RfgY%23fEFu7VVIlC" alt="APK QR" className="h-20 w-20 rounded-md border border-white/10 shadow-[0_12px_28px_rgba(0,0,0,0.35)]" />
+                  <Image src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&color=ffffff&bgcolor=0b0d14&data=https%3A%2F%2Flimewire.com%2Fd%2F8RfgY%23fEFu7VVIlC" alt="APK QR" width={80} height={80} className="h-20 w-20 rounded-md border border-white/10 shadow-[0_12px_28px_rgba(0,0,0,0.35)]" />
                   <div className="text-xs text-white/70">Scan to download the APK directly to your Android device.</div>
                 </div>
                 <a href="https://limewire.com/d/8RfgY#fEFu7VVIlC" className="rounded-xl border border-[#d4ff00]/70 bg-[#d4ff00] px-4 py-3 text-xs font-semibold text-black shadow-[0_0_16px_rgba(212,255,0,0.45)]" download target="_blank" rel="noreferrer">Download Android APK</a>
@@ -406,8 +569,8 @@ export default function Home() {
             <motion.div {...blurReveal} transition={{ duration: 0.7 }} className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="mono-font text-[11px] uppercase tracking-[0.2em] text-white/60">Venues</p>
-                <h2 className="heading-font text-3xl text-white md:text-4xl">Collaborate with us.</h2>
-                <p className="max-w-2xl text-white/70">Wave 01 is open to a few venues. Push live cover, verify guests, and reach nearby people who are ready to move.</p>
+                <h2 className="heading-font text-[32px] text-white md:text-[44px]">Collaborate with us.</h2>
+                <p className="max-w-[70ch] text-white/75">Wave 01 is open to a few venues. Push live cover, verify guests, and reach nearby people who are ready to move.</p>
               </div>
             </motion.div>
 
@@ -426,7 +589,7 @@ export default function Home() {
                   {partnerError ? <p className="text-sm text-[#ff98a4]">{partnerError}</p> : null}
                   {partnerState === "success" ? <p className="text-sm text-[#d4ff00]">Thanks. We will reach out within 24h.</p> : (
                     <div className="flex flex-wrap items-center gap-3">
-                      <button type="submit" disabled={partnerState === "loading"} className="rounded-xl border border-[#76e4f7]/70 bg-[#76e4f7] px-5 py-3 text-sm font-semibold text-black shadow-[0_0_16px_rgba(118,228,247,0.4)] disabled:opacity-60">{partnerState === "loading" ? "Sending..." : "Partner with us"}</button>
+                      <SparkButton type="submit" disabled={partnerState === "loading"} reduceMotion={reduceMotion} className="rounded-xl border border-[#76e4f7]/70 bg-[#76e4f7] px-5 py-3 text-sm font-semibold text-black shadow-[0_0_16px_rgba(118,228,247,0.4)] disabled:opacity-60">{partnerState === "loading" ? "Sending..." : "Partner with us"}</SparkButton>
                       <span className="mono-font text-xs uppercase tracking-[0.2em] text-white/60">We reply fast.</span>
                     </div>
                   )}
@@ -459,20 +622,72 @@ export default function Home() {
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div className="max-w-xl">
                 <p className="mono-font text-[11px] uppercase tracking-[0.2em] text-white/60">Contact</p>
-                <h3 className="heading-font text-2xl text-white">Talk to the team.</h3>
-                <p className="text-white/70">Questions, press, or partnerships? DM us on IG <a className="text-[#d4ff00]" href="https://instagram.com/Nataa.app" target="_blank" rel="noreferrer">@Nataa.app</a> or drop a note here.</p>
+                <h3 className="heading-font text-[28px] text-white md:text-[34px]">Talk to the team.</h3>
+                <p className="text-white/75 max-w-[70ch]">Questions, press, or partnerships? DM us on IG <a className="text-[#d4ff00]" href="https://instagram.com/Nataa.app" target="_blank" rel="noreferrer">@Nataa.app</a> or drop a note here.</p>
               </div>
               <form className="mt-4 w-full max-w-lg space-y-3" onSubmit={handleContactSubmit}>
                 <input className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/40 outline-none ring-0" placeholder="Name" value={contactForm.name} onChange={(e) => setContactForm((p) => ({ ...p, name: e.target.value }))} />
                 <input className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/40 outline-none ring-0" placeholder="Email" value={contactForm.email} onChange={(e) => setContactForm((p) => ({ ...p, email: e.target.value }))} required />
                 <textarea className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/40 outline-none ring-0" placeholder="How can we help?" rows={4} value={contactForm.message} onChange={(e) => setContactForm((p) => ({ ...p, message: e.target.value }))} required />
                 {contactError ? <p className="text-sm text-[#ff98a4]">{contactError}</p> : null}
-                {contactState === "success" ? <p className="text-sm text-[#d4ff00]">Message sent. We will reply shortly.</p> : <button type="submit" disabled={contactState === "loading"} className="w-full rounded-xl border border-white/15 bg-white/10 px-5 py-3 text-sm font-semibold text-white shadow-[0_0_16px_rgba(255,255,255,0.15)] disabled:opacity-60">{contactState === "loading" ? "Sending..." : "Send message"}</button>}
+                {contactState === "success" ? <p className="text-sm text-[#d4ff00]">Message sent. We will reply shortly.</p> : <SparkButton type="submit" disabled={contactState === "loading"} reduceMotion={reduceMotion} className="w-full rounded-xl border border-white/15 bg-white/10 px-5 py-3 text-sm font-semibold text-white shadow-[0_0_16px_rgba(255,255,255,0.15)] disabled:opacity-60">{contactState === "loading" ? "Sending..." : "Send message"}</SparkButton>}
               </form>
             </div>
           </div>
         </section>
       </main>
+
+      {showBackToTop ? (
+        <motion.button
+          type="button"
+          aria-label="Back to top"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full border border-white/15 bg-black/60 px-3.5 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.4)] backdrop-blur will-change-transform"
+          whileHover={reduceMotion ? undefined : { scale: 1.05 }}
+          whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+        >
+          <span className="relative flex h-6 w-6 items-center justify-center">
+            <svg viewBox="0 0 36 36" className="h-6 w-6">
+              <circle cx="18" cy="18" r="16" stroke="rgba(255,255,255,0.15)" strokeWidth="2.5" fill="none" />
+              <circle
+                cx="18"
+                cy="18"
+                r="16"
+                stroke="#d4ff00"
+                strokeWidth="2.5"
+                fill="none"
+                strokeDasharray="100"
+                strokeDashoffset={100 - scrollProgress * 100}
+                strokeLinecap="round"
+              />
+            </svg>
+            <span className="absolute text-xs">?</span>
+          </span>
+          Top
+        </motion.button>
+      ) : null}
+
+      {!reduceMotion && allowRunners && emojiRunners.length ? (
+        <div className="pointer-events-none fixed inset-0 z-10">
+          {emojiRunners.map((runner, i) => {
+            const startX = runner.direction === "ltr" ? "-15%" : "115%";
+            const endX = runner.direction === "ltr" ? "115%" : "-15%";
+            return (
+              <motion.span
+                key={runner.glyph + i}
+                className="absolute text-lg"
+                style={{ top: runner.top }}
+                initial={{ x: startX, opacity: 0 }}
+                animate={{ x: endX, opacity: [0, 1, 1, 0] }}
+                transition={{ duration: runner.duration, delay: runner.delay, repeat: Number.POSITIVE_INFINITY, ease: [0.4, 0.1, 0.2, 1], repeatDelay: runner.repeatDelay }}
+                aria-hidden
+              >
+                {runner.glyph}
+              </motion.span>
+            );
+          })}
+        </div>
+      ) : null}
 
       <footer className="border-t border-white/10 bg-black/70 px-4 py-8 text-sm text-white/60 md:px-6">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -490,6 +705,15 @@ export default function Home() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
 
 
 
